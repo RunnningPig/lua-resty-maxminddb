@@ -23,6 +23,7 @@ local C                   = ffi.C
 
 local tab_isarray   = require ('table.isarray')
 local tab_nkeys     = require ('table.nkeys')
+local setmetatable  = setmetatable
 
 local _M    ={}
 _M._VERSION = '1.3.3'
@@ -167,8 +168,6 @@ local MMDB_DATA_TYPE_FLOAT                          =   15
 -- you should install the libmaxminddb to your system
 local maxm                                          = ffi.load('libmaxminddb')
 --https://github.com/maxmind/libmaxminddb
-local mmdb                                          = ffi_new('MMDB_s')
-local initted                                       = false
 
 local function mmdb_strerror(rc)
     return ffi_str(maxm.MMDB_strerror(rc))
@@ -178,23 +177,19 @@ local function gai_strerror(rc)
     return ffi_str(C.gai_strerror(rc))
 end
 
-function _M.init(dbfile)
-  if not initted then
-    local maxmind_ready   = maxm.MMDB_open(dbfile,0,mmdb)
+function _M.open_readfile(dbfile)
+  local mmdb = ffi_new('MMDB_s')
+  local maxmind_ready = maxm.MMDB_open(dbfile,0,mmdb)
 
-    if maxmind_ready ~= MMDB_SUCCESS then
-        return nil, mmdb_strerror(maxmind_ready)
-    end
-
-    initted = true
-
-    ffi_gc(mmdb, maxm.MMDB_close)
+  if maxmind_ready ~= MMDB_SUCCESS then
+      return nil, mmdb_strerror(maxmind_ready)
   end
-  return initted
-end
 
-function _M.initted()
-    return initted
+  local self = setmetatable({
+    mmdb = ffi_gc(mmdb, maxm.MMDB_close),
+  }, mt)
+
+  return self
 end
 
 -- https://github.com/maxmind/libmaxminddb/blob/master/src/maxminddb.c#L1938
@@ -315,9 +310,10 @@ local function _dump_entry_data_list(entry_data_list,status)
   return entry_data_list,status,result
 end
 
-function _M.lookup(ip, lookup_path)
+function _M.lookup(self, ip, lookup_path)
+  local mmdb = self.mmdb
 
-  if not initted then
+  if not mmdb then
       return nil, "not initialized"
   end
 
